@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerokero"
+version = "0.1.0"
+description = "Automated speaking practice pipeline for language learners"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "DELAX" },
+]
+keywords = ["language-learning", "speaking", "ielts", "toefl", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Education",
+]
+dependencies = [
+    "click>=8.1",
+    "sounddevice>=0.5",
+    "numpy>=1.26",
+    "openai-whisper>=20231117",
+    "edge-tts>=6.1",
+    "anthropic>=0.39",
+    "openai>=1.50",
+    "google-genai>=1.0",
+    "tomli>=2.0; python_version < '3.12'",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+]
+
+[project.scripts]
+kerokero = "kerokero.cli:main"
+
+[project.urls]
+Repository = "https://github.com/DELAxGithub/kerokero"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerokero"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
