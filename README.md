@@ -1,138 +1,71 @@
 # kerokero 🐸
 
-Automated speaking practice pipeline for language learners.
+An open-source, multilingual speech training framework.
+Bring your own AI, your own content, your own goals.
 
-Generate prompts from your profile → Record yourself → Transcribe with Whisper → Get AI feedback → Track progress. All from the terminal.
-
-## Why
-
-Speaking practice is the hardest part of language learning to automate. You can drill vocabulary with flashcards and read articles all day, but there's no easy way to practice *speaking* on your own and get meaningful feedback. kerokero fixes that.
-
-## How it works
-
-```
-Profile (IELTS / TOEFL / Business / Custom)
-  ↓
-Topic Generator (LLM creates a prompt based on your level & weak areas)
-  ↓
-[Optional] Model Audio (Edge-TTS generates reference audio)
-  ↓
-Recording (you speak into your mic)
-  ↓
-Transcription (Whisper converts speech to text)
-  ↓
-Evaluation (LLM scores & gives feedback)
-  ↓
-Log (JSON log with transcript, scores, feedback, timestamps)
-```
-
-## Modes
-
-| Mode | Description | Time |
-|------|-------------|------|
-| `ielts-part2` | IELTS Speaking Part 2 — cue card → 1 min prep → 2 min speech | 3 min |
-| `toefl-integrated` | TOEFL iBT integrated speaking — read + listen → respond | 1 min |
-| `business` | Business presentation / meeting simulation | configurable |
-| `shadow` | Shadowing — listen to model audio, repeat, compare | per sentence |
-| `free` | Free talk on any topic | configurable |
-
-## Quick start
+## Quick Start
 
 ```bash
-# Install
-pip install kerokero
-
-# Configure API keys
-kerokero init
-
-# Run a practice session
-kerokero run --mode ielts-part2
-
-# Review past sessions
-kerokero log --last 5
+pip install -e .
+kerokero
 ```
+
+On first run, you'll be asked for your Anthropic API key.
+Then: topic appears → you speak → AI evaluates → feedback displayed.
+
+## What It Does
+
+kerokero automates the speaking practice loop:
+
+1. **Random topic** from your profile deck (IELTS Part 2 cue cards)
+2. **Timed recording** from your microphone
+3. **Whisper transcription** (local, private)
+4. **AI evaluation** with detailed feedback (band scores, corrections, improvements)
+5. **Session log** saved for progress tracking
+
+```
+Topic Card → 15s Prep → Record (up to 2min) → Transcribe → Evaluate → Feedback
+```
+
+## Why kerokero?
+
+Apps like ELSA are great for pronunciation. kerokero is different:
+
+- **Open**: MIT license, bring your own AI, customize everything
+- **Test-focused**: IELTS, TOEFL, DELE — add any exam profile
+- **Multilingual**: Whisper + LLMs support 100+ languages
+- **Private**: Audio stays on your machine, transcription runs locally
+- **Composable**: A Unix-style tool, not a walled garden
 
 ## Configuration
 
-kerokero uses `~/.kerokero/config.toml` for settings:
+First run creates `~/.kerokero/config.toml`:
 
 ```toml
-[profile]
-target_exam = "ielts"        # ielts / toefl / business / general
-current_level = "B2"         # CEFR level
-native_language = "ja"       # for feedback language
-target_score = 7.0           # exam-specific target
-
 [ai]
-evaluator = "claude"         # claude / openai / gemini
-evaluator_model = "claude-sonnet-4-20250514"
+anthropic_api_key = "sk-ant-..."
+whisper_model = "tiny"
 
-[transcription]
-engine = "whisper"           # whisper / whisper-api
-model = "base"               # tiny / base / small / medium / large
-
-[tts]
-engine = "edge-tts"          # edge-tts (free) / google-cloud
-voice = "en-US-AriaNeural"
-
-[audio]
+[recording]
+duration_seconds = 120
 sample_rate = 16000
-format = "wav"
+
+[display]
+language = "ja"
 ```
 
-API keys are stored in `~/.kerokero/.env`:
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-GOOGLE_API_KEY=AI...
-```
-
-## Project structure
-
-```
-kerokero/
-├── src/
-│   └── kerokero/
-│       ├── __init__.py
-│       ├── cli.py              # CLI entry point (click)
-│       ├── config.py           # Config loading & validation
-│       ├── pipeline.py         # Orchestrates the full session flow
-│       ├── recorder.py         # Mic recording (sounddevice)
-│       ├── transcriber.py      # Whisper transcription
-│       ├── evaluator/
-│       │   ├── __init__.py
-│       │   ├── base.py         # Abstract evaluator interface
-│       │   ├── claude.py
-│       │   ├── openai.py
-│       │   └── gemini.py
-│       ├── generator/
-│       │   ├── __init__.py
-│       │   ├── base.py         # Abstract topic generator
-│       │   ├── ielts.py
-│       │   ├── toefl.py
-│       │   ├── business.py
-│       │   └── free.py
-│       ├── tts/
-│       │   ├── __init__.py
-│       │   ├── base.py
-│       │   └── edge.py         # Edge-TTS (free)
-│       └── log.py              # Session logging (JSON)
-├── tests/
-│   ├── test_pipeline.py
-│   ├── test_transcriber.py
-│   └── test_evaluator.py
-├── pyproject.toml
-├── LICENSE
-└── README.md
-```
+Sessions are saved to `~/.kerokero/sessions/` as JSON + WAV.
 
 ## Requirements
 
 - Python 3.11+
 - A microphone
-- At least one AI API key (Anthropic, OpenAI, or Google)
-- ffmpeg (for audio processing)
+- Anthropic API key
+- ffmpeg (for Whisper)
+
+## Current Status
+
+Day 1 of a 100-day build.
 
 ## License
 

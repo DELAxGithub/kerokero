@@ -1,0 +1,202 @@
+[
+  {
+    "id": "ielts-001",
+    "topic": "A skill you learned outside of school",
+    "prompt": "Describe a skill you learned outside of school or university. You should say: what the skill is, how you learned it, why you decided to learn it, and explain how this skill has helped you.",
+    "suggested_angles": [
+      "video production — self-taught editing for podcasts",
+      "programming — building tools to automate daily work",
+      "cycling — training for long-distance events"
+    ]
+  },
+  {
+    "id": "ielts-002",
+    "topic": "A person who inspired you to do something",
+    "prompt": "Describe a person who inspired you to do something. You should say: who this person is, how you know this person, what they inspired you to do, and explain why they had such an effect on you.",
+    "suggested_angles": [
+      "a mentor at work who changed your career direction",
+      "a podcaster whose content motivated you to create",
+      "a family member who showed resilience"
+    ]
+  },
+  {
+    "id": "ielts-003",
+    "topic": "A place you visited that exceeded your expectations",
+    "prompt": "Describe a place you visited that was better than you expected. You should say: where it was, when you went there, what you did there, and explain why it exceeded your expectations.",
+    "suggested_angles": [
+      "a small town in Spain with unexpected cultural depth",
+      "a coworking space in a foreign city",
+      "a national park or nature reserve"
+    ]
+  },
+  {
+    "id": "ielts-004",
+    "topic": "A time you had to change your plan",
+    "prompt": "Describe a time when you had to change your plan. You should say: what the original plan was, why you had to change it, what you did instead, and explain how you felt about the change.",
+    "suggested_angles": [
+      "a career pivot due to industry changes",
+      "travel plans disrupted by unexpected events",
+      "a project that required a complete rethink"
+    ]
+  },
+  {
+    "id": "ielts-005",
+    "topic": "An activity you do to stay healthy",
+    "prompt": "Describe an activity you do to stay healthy. You should say: what the activity is, how often you do it, how you started doing it, and explain why you think it is good for your health.",
+    "suggested_angles": [
+      "cycling as daily commute and exercise",
+      "cooking healthy meals instead of eating out",
+      "using a calorie tracking app to manage diet"
+    ]
+  },
+  {
+    "id": "ielts-006",
+    "topic": "A piece of technology you find useful",
+    "prompt": "Describe a piece of technology you find very useful. You should say: what it is, how often you use it, what you use it for, and explain why you find it so useful.",
+    "suggested_angles": [
+      "AI coding assistants that accelerate development",
+      "local LLMs for privacy-conscious productivity",
+      "noise-cancelling headphones for deep work"
+    ]
+  },
+  {
+    "id": "ielts-007",
+    "topic": "A decision you made that you are proud of",
+    "prompt": "Describe an important decision you made that you are proud of. You should say: what the decision was, when you made it, what happened as a result, and explain why you are proud of this decision.",
+    "suggested_angles": [
+      "deciding to move abroad for new opportunities",
+      "leaving a stable job to pursue a passion project",
+      "choosing to make a project open-source"
+    ]
+  },
+  {
+    "id": "ielts-008",
+    "topic": "A book or article that influenced your thinking",
+    "prompt": "Describe a book or article that had a significant influence on your thinking. You should say: what it was about, when you read it, what ideas you found interesting, and explain how it changed your perspective.",
+    "suggested_angles": [
+      "a book about productivity and deep work",
+      "an article about the future of AI and employment",
+      "a biography of someone who reinvented themselves"
+    ]
+  },
+  {
+    "id": "ielts-009",
+    "topic": "A hobby you would like to start",
+    "prompt": "Describe a hobby you would like to start in the future. You should say: what it is, how you learned about it, what you would need to start, and explain why you want to try it.",
+    "suggested_angles": [
+      "learning a musical instrument",
+      "starting a YouTube channel about tech",
+      "pottery or ceramics as a creative outlet"
+    ]
+  },
+  {
+    "id": "ielts-010",
+    "topic": "A time you helped someone",
+    "prompt": "Describe a time when you helped someone. You should say: who you helped, what the situation was, how you helped them, and explain how you felt about helping them.",
+    "suggested_angles": [
+      "mentoring a junior colleague on a project",
+      "helping a friend navigate a new city",
+      "contributing to an open-source project"
+    ]
+  },
+  {
+    "id": "ielts-011",
+    "topic": "An event that changed your daily routine",
+    "prompt": "Describe an event that changed your daily routine. You should say: what the event was, when it happened, how your routine changed, and explain whether the change was positive or negative.",
+    "suggested_angles": [
+      "switching to remote work",
+      "moving to a new country",
+      "starting a regular exercise habit"
+    ]
+  },
+  {
+    "id": "ielts-012",
+    "topic": "Something you own that is important to you",
+    "prompt": "Describe something you own that is very important to you. You should say: what it is, how long you have had it, how you use it, and explain why it is important to you.",
+    "suggested_angles": [
+      "a laptop that enables your creative work",
+      "a bicycle that represents freedom and health",
+      "a gift from someone special"
+    ]
+  },
+  {
+    "id": "ielts-013",
+    "topic": "A challenge you overcame",
+    "prompt": "Describe a challenge you faced and overcame. You should say: what the challenge was, when you faced it, what you did to overcome it, and explain what you learned from the experience.",
+    "suggested_angles": [
+      "learning to communicate in a foreign language",
+      "debugging a critical production issue under pressure",
+      "adapting to a completely new work environment"
+    ]
+  },
+  {
+    "id": "ielts-014",
+    "topic": "A meal you enjoyed",
+    "prompt": "Describe a meal you particularly enjoyed. You should say: what you ate, where you had it, who you were with, and explain why this meal was special to you.",
+    "suggested_angles": [
+      "discovering local cuisine while traveling",
+      "a home-cooked meal that reminded you of childhood",
+      "a celebration dinner for a milestone achievement"
+    ]
+  },
+  {
+    "id": "ielts-015",
+    "topic": "A goal you are working towards",
+    "prompt": "Describe a goal you are currently working towards. You should say: what the goal is, why it is important to you, what steps you are taking, and explain how you will feel when you achieve it.",
+    "suggested_angles": [
+      "achieving a target IELTS band score",
+      "launching an open-source project",
+      "building a sustainable freelance career"
+    ]
+  },
+  {
+    "id": "ielts-016",
+    "topic": "A time you received good advice",
+    "prompt": "Describe a time when you received good advice. You should say: who gave you the advice, what the situation was, what the advice was, and explain why you think it was good advice.",
+    "suggested_angles": [
+      "career advice from a mentor",
+      "life advice from a parent or elder",
+      "technical advice that solved a difficult problem"
+    ]
+  },
+  {
+    "id": "ielts-017",
+    "topic": "A place where you go to relax",
+    "prompt": "Describe a place where you like to go to relax. You should say: where it is, how often you go there, what you do there, and explain why it helps you relax.",
+    "suggested_angles": [
+      "a café with good atmosphere for thinking",
+      "a park or beach near your home",
+      "a coworking space that doubles as a social hub"
+    ]
+  },
+  {
+    "id": "ielts-018",
+    "topic": "A subject you enjoyed studying",
+    "prompt": "Describe a subject you enjoyed studying at school or university. You should say: what the subject was, who taught it, what you liked about it, and explain how it has been useful to you.",
+    "suggested_angles": [
+      "computer science and its real-world applications",
+      "a language class that opened cultural doors",
+      "a creative subject like film or design"
+    ]
+  },
+  {
+    "id": "ielts-019",
+    "topic": "A time you tried something for the first time",
+    "prompt": "Describe a time when you tried something for the first time. You should say: what you tried, when it was, how you felt about it, and explain whether you would do it again.",
+    "suggested_angles": [
+      "giving a public talk or presentation",
+      "trying a new sport or physical activity",
+      "using AI tools for creative work"
+    ]
+  },
+  {
+    "id": "ielts-020",
+    "topic": "A project you completed successfully",
+    "prompt": "Describe a project you completed that you are proud of. You should say: what the project was, how long it took, what difficulties you faced, and explain why you feel proud of it.",
+    "suggested_angles": [
+      "building and shipping a mobile app",
+      "producing a podcast series from scratch",
+      "automating a workflow that saved hours of manual work"
+    ]
+  }
+]

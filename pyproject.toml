@@ -24,16 +24,13 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "click>=8.1",
+    "anthropic>=0.39",
     "sounddevice>=0.5",
     "numpy>=1.26",
+    "scipy>=1.11",
     "openai-whisper>=20231117",
-    "edge-tts>=6.1",
-    "anthropic>=0.39",
-    "openai>=1.50",
-    "google-genai>=1.0",
-    "tomli>=2.0; python_version < '3.12'",
     "rich>=13.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -44,7 +41,7 @@ dev = [
 ]
 
 [project.scripts]
-kerokero = "kerokero.cli:main"
+kerokero = "kerokero.main:main"
 
 [project.urls]
 Repository = "https://github.com/DELAxGithub/kerokero"
