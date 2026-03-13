@@ -23,8 +23,33 @@ kerokero automates the speaking practice loop:
 5. **Session log** saved for progress tracking
 
 ```
-Topic Card → 15s Prep → Record (up to 2min) → Transcribe → Evaluate → Feedback
+Topic Card → 60s Prep → Record (up to 2min) → Transcribe → Evaluate → Feedback
 ```
+
+## Modes
+
+### Test Mode (default)
+
+```bash
+kerokero
+```
+
+Simulates IELTS Part 2: 60s prep → 120s recording → full band score evaluation.
+
+### Practice Mode
+
+```bash
+kerokero practice
+```
+
+Research-backed 3-stage pipeline that separates content planning from English production:
+
+1. **Structure** (60s, L1 OK) — speak your plan in any language. AI evaluates logic only.
+2. **Lexical Priming** (10s) — AI suggests 5 Band 7+ English phrases from your plan.
+3. **Production** (120s, English) — speak with key phrases on screen. Full IELTS evaluation.
+
+Based on Levelt's Speech Production Model and pre-task planning research (Ellis 2005, 2009).
+See [docs/research/pre-task-planning.md](docs/research/pre-task-planning.md) for details.
 
 ## Why kerokero?
 
@@ -72,7 +97,7 @@ Then add `anthropic_api_key` to your config.
 
 ## Current Status
 
-Day 1 of a 100-day build.
+Day 2 of a 100-day build. Practice mode implemented.
 
 ## License
 

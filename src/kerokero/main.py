@@ -1,7 +1,6 @@
-"""kerokero — Day 1 pipeline: topic → record → transcribe → evaluate → feedback."""
+"""kerokero — IELTS speaking practice with content-first methodology."""
 
 import json
-import os
 import signal
 import subprocess
 import sys
@@ -85,16 +84,16 @@ def display_topic(topic: dict):
     console.print(Panel(content, title=f"[bold cyan]{topic['topic']}[/]", border_style="cyan"))
 
 
-def prep_countdown(seconds: int = 15):
+# --- Recording ---
+
+
+def prep_countdown(seconds: int = 60):
     """Countdown timer for preparation."""
     console.print(f"\n[yellow]Preparation time: {seconds} seconds[/]")
     for i in range(seconds, 0, -1):
         console.print(f"  [dim]{i}...[/]", end="\r")
         time.sleep(1)
     console.print("[bold green]Start speaking![/]            \n")
-
-
-# --- Recording ---
 
 
 def record_audio(duration: int = 120, sample_rate: int = 16000) -> tuple[np.ndarray, float]:
@@ -127,7 +126,6 @@ def record_audio(duration: int = 120, sample_rate: int = 16000) -> tuple[np.ndar
     sd.stop()
     actual_duration = time.time() - start_time
 
-    # Trim to actual recorded length
     samples_recorded = int(actual_duration * sample_rate)
     recording = recording[:samples_recorded]
 
@@ -143,19 +141,83 @@ def save_wav(audio: np.ndarray, path: Path, sample_rate: int = 16000):
 # --- Transcription ---
 
 
-def transcribe(audio_path: Path, model_name: str = "tiny") -> str:
+def transcribe(audio_path: Path, model_name: str = "tiny", language: str | None = "en") -> str:
     """Transcribe audio file using Whisper."""
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-        progress.add_task("Transcribing with Whisper...", total=None)
+        lang_label = language or "auto"
+        progress.add_task(f"Transcribing with Whisper ({lang_label})...", total=None)
         model = whisper.load_model(model_name)
-        result = model.transcribe(str(audio_path), language="en")
+        kwargs = {"language": language} if language else {}
+        result = model.transcribe(str(audio_path), **kwargs)
 
     transcript = result["text"].strip()
     console.print(Panel(transcript, title="[bold]Transcript[/]", border_style="blue"))
     return transcript
 
 
-# --- Evaluation ---
+# --- Claude call (shared) ---
+
+
+def call_claude(system_prompt: str, user_message: str, api_key: str = "") -> str:
+    """Call Claude via CLI or API. Returns raw text response."""
+    if api_key:
+        return _call_api(system_prompt, user_message, api_key)
+    return _call_cli(system_prompt, user_message)
+
+
+def _call_cli(system_prompt: str, user_message: str) -> str:
+    """Call Claude CLI (claude -p)."""
+    prompt = f"{system_prompt}\n\n---\n\n{user_message}"
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        progress.add_task("Claude is thinking...", total=None)
+        result = subprocess.run(
+            ["claude", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+    if result.returncode != 0:
+        console.print(f"[red]Claude CLI error:[/] {result.stderr.strip()}")
+        console.print("[dim]Hint: Install Claude Code or set anthropic_api_key in config[/]")
+        sys.exit(1)
+
+    return result.stdout.strip()
+
+
+def _call_api(system_prompt: str, user_message: str, api_key: str) -> str:
+    """Call Anthropic API directly."""
+    try:
+        import anthropic
+    except ImportError:
+        console.print("[red]anthropic package not installed.[/] Run: pip install anthropic")
+        sys.exit(1)
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        progress.add_task("Claude is thinking (API)...", total=None)
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+
+    return response.content[0].text
+
+
+def parse_json_response(raw: str) -> dict:
+    """Extract JSON from Claude response, handling markdown fences."""
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0]
+    elif "```" in raw:
+        raw = raw.split("```")[1].split("```")[0]
+    return json.loads(raw.strip())
+
+
+# --- Test Mode Evaluation ---
 
 
 EVALUATOR_SYSTEM_PROMPT = """You are an IELTS Speaking examiner. Evaluate the following Part 2 response.
@@ -190,91 +252,48 @@ Respond in this exact JSON format:
 }"""
 
 
-def evaluate(
+def evaluate_test(
     topic_prompt: str, transcript: str, display_lang: str = "ja",
-    api_key: str = "", duration: float = 0,
+    api_key: str = "", duration: float = 0, key_phrases: list[str] | None = None,
 ) -> dict:
-    """Evaluate via Claude CLI (default) or Anthropic API (if api_key set)."""
+    """IELTS evaluation for test mode (and practice Stage 3)."""
     lang_instruction = ""
     if display_lang != "en":
-        lang_instruction = f"\n\nIMPORTANT: Write the examiner_comment, strengths, weaknesses, specific_improvements reasons, and corrected_version in {display_lang}. Write corrected_version_en in English. Keep the JSON keys in English."
+        lang_instruction = (
+            f"\n\nIMPORTANT: Write the examiner_comment, strengths, weaknesses, "
+            f"specific_improvements reasons, and corrected_version in {display_lang}. "
+            f"Write corrected_version_en in English. Keep the JSON keys in English."
+        )
 
     duration_info = ""
     if duration > 0:
-        duration_info = f"\nRecording duration: {duration:.0f} seconds (note: transcript may be shorter due to pauses/silence)"
+        duration_info = f"\nRecording duration: {duration:.0f} seconds"
 
-    user_message = f"""Topic: {topic_prompt}
-
-Candidate's response (transcribed from audio):
-{transcript}{duration_info}
-
-Evaluate this IELTS Speaking Part 2 response.{lang_instruction}
-
-Respond ONLY with the JSON object, no markdown fences."""
-
-    if api_key:
-        raw = _evaluate_api(user_message, api_key)
-    else:
-        raw = _evaluate_cli(user_message)
-
-    # Extract JSON from response (handle markdown code blocks)
-    if "```json" in raw:
-        raw = raw.split("```json")[1].split("```")[0]
-    elif "```" in raw:
-        raw = raw.split("```")[1].split("```")[0]
-
-    return json.loads(raw.strip())
-
-
-def _evaluate_cli(user_message: str) -> str:
-    """Evaluate using Claude CLI (claude -p). Works with MAX plan, no API key needed."""
-    prompt = f"{EVALUATOR_SYSTEM_PROMPT}\n\n---\n\n{user_message}"
-
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-        progress.add_task("Claude is evaluating (CLI)...", total=None)
-        result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True,
-            text=True,
-            timeout=120,
+    phrases_info = ""
+    if key_phrases:
+        phrases_list = ", ".join(f'"{p}"' for p in key_phrases)
+        phrases_info = (
+            f"\n\nThe speaker was given these key phrases to incorporate: {phrases_list}\n"
+            f"Note which phrases were used and which were missed. "
+            f'Add a "key_phrases_used" list to your JSON response.'
         )
 
-    if result.returncode != 0:
-        console.print(f"[red]Claude CLI error:[/] {result.stderr.strip()}")
-        console.print("[dim]Hint: Install Claude Code (npm install -g @anthropic-ai/claude-code) "
-                      "or set anthropic_api_key in ~/.kerokero/config.toml[/]")
-        sys.exit(1)
+    user_message = (
+        f"Topic: {topic_prompt}\n\n"
+        f"Candidate's response (transcribed from audio):\n"
+        f"{transcript}{duration_info}\n\n"
+        f"Evaluate this IELTS Speaking Part 2 response.{lang_instruction}{phrases_info}\n\n"
+        f"Respond ONLY with the JSON object, no markdown fences."
+    )
 
-    return result.stdout.strip()
-
-
-def _evaluate_api(user_message: str, api_key: str) -> str:
-    """Evaluate using Anthropic API directly. Requires anthropic_api_key in config."""
-    try:
-        import anthropic
-    except ImportError:
-        console.print("[red]anthropic package not installed.[/] Run: pip install anthropic")
-        sys.exit(1)
-
-    client = anthropic.Anthropic(api_key=api_key)
-
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-        progress.add_task("Claude is evaluating (API)...", total=None)
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            system=EVALUATOR_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-
-    return response.content[0].text
+    raw = call_claude(EVALUATOR_SYSTEM_PROMPT, user_message, api_key)
+    return parse_json_response(raw)
 
 
 def display_evaluation(evaluation: dict):
-    """Display evaluation results with rich formatting."""
+    """Display test mode evaluation results."""
     scores = evaluation["scores"]
 
-    # Band scores
     score_lines = [
         f"[bold yellow]Overall Band: {evaluation['overall_band']}[/]\n",
         f"  Fluency & Coherence:    {scores['fluency_coherence']}",
@@ -284,12 +303,13 @@ def display_evaluation(evaluation: dict):
     ]
     console.print(Panel("\n".join(score_lines), title="[bold]IELTS Band Scores[/]", border_style="yellow"))
 
-    # Strengths & Weaknesses
     strengths = "\n".join(f"  [green]✓[/] {s}" for s in evaluation["strengths"])
     weaknesses = "\n".join(f"  [red]✗[/] {w}" for w in evaluation["weaknesses"])
-    console.print(Panel(f"[bold green]Strengths[/]\n{strengths}\n\n[bold red]Areas to Improve[/]\n{weaknesses}", border_style="white"))
+    console.print(Panel(
+        f"[bold green]Strengths[/]\n{strengths}\n\n[bold red]Areas to Improve[/]\n{weaknesses}",
+        border_style="white",
+    ))
 
-    # Specific improvements
     if evaluation.get("specific_improvements"):
         improvements = []
         for imp in evaluation["specific_improvements"]:
@@ -297,25 +317,123 @@ def display_evaluation(evaluation: dict):
             improvements.append(f"  [dim]{imp['reason']}[/]\n")
         console.print(Panel("\n".join(improvements), title="[bold]Specific Improvements[/]", border_style="magenta"))
 
-    # Corrected version (English + translated)
     if evaluation.get("corrected_version_en"):
         console.print(Panel(evaluation["corrected_version_en"], title="[bold]Model Answer (EN)[/]", border_style="green"))
     if evaluation.get("corrected_version"):
         console.print(Panel(evaluation["corrected_version"], title="[bold]Model Answer (翻訳)[/]", border_style="green"))
 
-    # Examiner comment
+    # Key phrases tracking (practice mode Stage 3)
+    if evaluation.get("key_phrases_used"):
+        used = "\n".join(f"  [green]✓[/] {p}" for p in evaluation["key_phrases_used"])
+        console.print(Panel(used, title="[bold]Key Phrases Used[/]", border_style="cyan"))
+
     if evaluation.get("examiner_comment"):
         console.print(f"\n[bold]Examiner:[/] {evaluation['examiner_comment']}\n")
+
+
+# --- Practice Mode: Stage 1 (Structure) ---
+
+
+STRUCTURE_SYSTEM_PROMPT = """You are evaluating the LOGICAL STRUCTURE of an IELTS Speaking Part 2 response plan.
+The plan is in the speaker's native language. Do NOT evaluate language quality.
+
+Evaluate ONLY:
+1. Topic Coverage (0-9): Does the plan address all parts of the topic card?
+2. Idea Development (0-9): Are ideas specific enough? (not vague/generic)
+3. Logical Flow (0-9): Is there a clear progression? (not random jumping)
+4. Completeness (0-9): Could this fill 2 minutes when spoken in English?
+
+Also provide 5 Band 7+ English key phrases the speaker should try to use
+when delivering this content in English.
+
+Respond in this exact JSON format:
+{
+  "content_score": 7.0,
+  "scores": {
+    "topic_coverage": 7,
+    "idea_development": 6,
+    "logical_flow": 7,
+    "completeness": 8
+  },
+  "feedback": "Brief feedback on the logical structure",
+  "suggested_outline_en": "If you were to say this in English, a strong structure would be: ...",
+  "key_phrases_en": ["phrase 1", "phrase 2", "phrase 3", "phrase 4", "phrase 5"],
+  "gate_pass": true
+}
+
+Set gate_pass to true if content_score >= 6.0."""
+
+
+def evaluate_structure(
+    topic_prompt: str, transcript_l1: str, display_lang: str = "ja",
+    api_key: str = "", duration: float = 0,
+) -> dict:
+    """Evaluate L1 content structure (practice mode Stage 1)."""
+    lang_instruction = ""
+    if display_lang != "en":
+        lang_instruction = (
+            f"\n\nIMPORTANT: Write feedback and suggested_outline in {display_lang}. "
+            f"Write suggested_outline_en and key_phrases_en in English. "
+            f"Keep JSON keys in English."
+        )
+
+    duration_info = ""
+    if duration > 0:
+        duration_info = f"\nPlanning duration: {duration:.0f} seconds"
+
+    user_message = (
+        f"Topic card: {topic_prompt}\n\n"
+        f"Speaker's plan (transcribed, may be in Japanese or mixed language):\n"
+        f"{transcript_l1}{duration_info}\n\n"
+        f"Evaluate this content plan.{lang_instruction}\n\n"
+        f"Respond ONLY with the JSON object, no markdown fences."
+    )
+
+    raw = call_claude(STRUCTURE_SYSTEM_PROMPT, user_message, api_key)
+    return parse_json_response(raw)
+
+
+def display_structure_result(evaluation: dict):
+    """Display Stage 1 structure evaluation."""
+    scores = evaluation["scores"]
+
+    gate = "[bold green]PASS[/]" if evaluation.get("gate_pass") else "[bold red]RETRY RECOMMENDED[/]"
+
+    score_lines = [
+        f"[bold yellow]Content Score: {evaluation['content_score']}[/]  {gate}\n",
+        f"  Topic Coverage:    {scores['topic_coverage']}",
+        f"  Idea Development:  {scores['idea_development']}",
+        f"  Logical Flow:      {scores['logical_flow']}",
+        f"  Completeness:      {scores['completeness']}",
+    ]
+    console.print(Panel("\n".join(score_lines), title="[bold]Stage 1: Content Structure[/]", border_style="yellow"))
+
+    if evaluation.get("feedback"):
+        console.print(f"\n[bold]Feedback:[/] {evaluation['feedback']}\n")
+
+    if evaluation.get("suggested_outline_en"):
+        console.print(Panel(
+            evaluation["suggested_outline_en"],
+            title="[bold]Suggested English Outline[/]",
+            border_style="green",
+        ))
+
+
+def display_key_phrases(phrases: list[str]):
+    """Display key phrases prominently for Stage 2 priming."""
+    lines = "\n".join(f"  • {p}" for p in phrases)
+    console.print(Panel(lines, title="[bold cyan]Key Phrases to Use[/]", border_style="cyan"))
 
 
 # --- Session Log ---
 
 
-def save_session(topic: dict, transcript: str, evaluation: dict, duration: float, audio_path: Path):
-    """Save session as JSON."""
+def save_test_session(topic: dict, transcript: str, evaluation: dict, duration: float, audio_path: Path):
+    """Save test mode session."""
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
     session = {
+        "mode": "test",
         "timestamp": datetime.now().isoformat(),
         "topic_id": topic["id"],
         "topic": topic["topic"],
@@ -326,54 +444,226 @@ def save_session(topic: dict, transcript: str, evaluation: dict, duration: float
         "audio_path": str(audio_path),
     }
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    session_path = SESSIONS_DIR / f"{timestamp}.json"
-    session_path.write_text(json.dumps(session, ensure_ascii=False, indent=2))
-    console.print(f"[dim]Session saved: {session_path}[/]")
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    path = SESSIONS_DIR / f"{ts}.json"
+    path.write_text(json.dumps(session, ensure_ascii=False, indent=2))
+    console.print(f"[dim]Session saved: {path}[/]")
 
 
-# --- Main ---
+def save_practice_session(
+    topic: dict, structure_eval: dict, structure_transcript: str, structure_duration: float,
+    production_eval: dict, production_transcript: str, production_duration: float,
+    structure_audio: Path, production_audio: Path,
+):
+    """Save practice mode session with both stages."""
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    session = {
+        "mode": "practice",
+        "timestamp": datetime.now().isoformat(),
+        "topic_id": topic["id"],
+        "topic": topic["topic"],
+        "prompt": topic["prompt"],
+        "stages": {
+            "structure": {
+                "transcript_l1": structure_transcript,
+                "content_score": structure_eval.get("content_score"),
+                "scores": structure_eval.get("scores"),
+                "key_phrases_en": structure_eval.get("key_phrases_en", []),
+                "gate_pass": structure_eval.get("gate_pass"),
+                "duration_seconds": round(structure_duration, 1),
+                "audio_path": str(structure_audio),
+            },
+            "production": {
+                "transcript_en": production_transcript,
+                "evaluation": production_eval,
+                "duration_seconds": round(production_duration, 1),
+                "audio_path": str(production_audio),
+            },
+        },
+    }
+
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    path = SESSIONS_DIR / f"{ts}_practice.json"
+    path.write_text(json.dumps(session, ensure_ascii=False, indent=2))
+    console.print(f"[dim]Session saved: {path}[/]")
 
 
-def main():
-    """Run kerokero speaking practice session."""
-    console.print("\n[bold green]kerokero[/] [dim]v0.1.0[/] — IELTS Speaking Practice\n")
+# --- Main: Test Mode ---
 
-    # 1. Config
-    config = load_config()
+
+def main_test(config: dict):
+    """Test mode: full IELTS Part 2 simulation in English."""
     whisper_model = config.get("ai", {}).get("whisper_model", "tiny")
     api_key = config.get("ai", {}).get("anthropic_api_key", "")
     duration = config.get("recording", {}).get("duration_seconds", 120)
     sample_rate = config.get("recording", {}).get("sample_rate", 16000)
     display_lang = config.get("display", {}).get("language", "ja")
 
-    # 2. Topic
+    # 1. Topic
     topic = pick_topic()
     display_topic(topic)
     prep_countdown(60)
 
-    # 3. Record
+    # 2. Record
     audio, actual_duration = record_audio(duration=duration, sample_rate=sample_rate)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    audio_path = SESSIONS_DIR / f"{timestamp}.wav"
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    audio_path = SESSIONS_DIR / f"{ts}.wav"
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     save_wav(audio, audio_path, sample_rate)
 
-    # 4. Transcribe
-    transcript = transcribe(audio_path, model_name=whisper_model)
-
+    # 3. Transcribe
+    transcript = transcribe(audio_path, model_name=whisper_model, language="en")
     if not transcript:
         console.print("[red]No speech detected. Try again.[/]")
         return
 
-    # 5. Evaluate
-    evaluation = evaluate(topic["prompt"], transcript, display_lang, api_key=api_key, duration=actual_duration)
+    # 4. Evaluate
+    evaluation = evaluate_test(
+        topic["prompt"], transcript, display_lang, api_key=api_key, duration=actual_duration,
+    )
     display_evaluation(evaluation)
 
-    # 6. Save
-    save_session(topic, transcript, evaluation, actual_duration, audio_path)
-
+    # 5. Save
+    save_test_session(topic, transcript, evaluation, actual_duration, audio_path)
     console.print("[bold green]Session complete![/] Keep practicing.\n")
+
+
+# --- Main: Practice Mode (3-Stage) ---
+
+
+def main_practice(config: dict):
+    """Practice mode: Structure (L1) → Priming → Production (L2)."""
+    whisper_model = config.get("ai", {}).get("whisper_model", "tiny")
+    api_key = config.get("ai", {}).get("anthropic_api_key", "")
+    duration = config.get("recording", {}).get("duration_seconds", 120)
+    sample_rate = config.get("recording", {}).get("sample_rate", 16000)
+    display_lang = config.get("display", {}).get("language", "ja")
+
+    # --- Topic ---
+    topic = pick_topic()
+    display_topic(topic)
+
+    # === STAGE 1: Structure (L1 Content Planning) ===
+    console.print("\n[bold magenta]━━━ Stage 1: Structure ━━━[/]")
+    console.print("[dim]Speak in your native language. Plan your answer structure.[/]")
+    console.print(Panel(
+        "[bold]Main Idea[/] — What are you going to talk about?\n"
+        "[bold]Reason[/]    — Why is it significant?\n"
+        "[bold]Example[/]   — Specific details or story\n"
+        "[bold]Closing[/]   — Summary or reflection",
+        title="[bold]Framework[/]",
+        border_style="magenta",
+    ))
+
+    console.print(f"\n[yellow]Record your plan (60s, any language, Ctrl+C to stop)[/]")
+    s1_audio, s1_duration = record_audio(duration=60, sample_rate=sample_rate)
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    s1_audio_path = SESSIONS_DIR / f"{ts}_s1.wav"
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    save_wav(s1_audio, s1_audio_path, sample_rate)
+
+    # Transcribe L1 (auto-detect language)
+    s1_transcript = transcribe(s1_audio_path, model_name=whisper_model, language=None)
+    if not s1_transcript:
+        console.print("[red]No speech detected. Try again.[/]")
+        return
+
+    # Evaluate structure
+    structure_eval = evaluate_structure(
+        topic["prompt"], s1_transcript, display_lang, api_key=api_key, duration=s1_duration,
+    )
+    display_structure_result(structure_eval)
+
+    # === STAGE 2: Lexical Priming ===
+    console.print("\n[bold magenta]━━━ Stage 2: Lexical Priming ━━━[/]")
+
+    key_phrases = structure_eval.get("key_phrases_en", [])
+    if key_phrases:
+        display_key_phrases(key_phrases)
+    else:
+        console.print("[dim]No key phrases generated. Proceeding to production.[/]")
+
+    # Gate check
+    if not structure_eval.get("gate_pass", True):
+        choice_input = console.input(
+            "[yellow]Content score below 6. Retry structure (r) or continue anyway (c)?[/] "
+        ).strip().lower()
+        if choice_input == "r":
+            console.print("[dim]Restarting...[/]")
+            main_practice(config)
+            return
+
+    console.print("\n[dim]Take 10 seconds to absorb the key phrases...[/]")
+    for i in range(10, 0, -1):
+        console.print(f"  [dim]{i}...[/]", end="\r")
+        time.sleep(1)
+
+    # === STAGE 3: Production (L2 Speaking) ===
+    console.print("\n[bold magenta]━━━ Stage 3: Production ━━━[/]")
+    console.print("[bold]Now speak in English.[/] Use the key phrases above.\n")
+
+    if key_phrases:
+        display_key_phrases(key_phrases)
+
+    s3_audio, s3_duration = record_audio(duration=duration, sample_rate=sample_rate)
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    s3_audio_path = SESSIONS_DIR / f"{ts}_s3.wav"
+    save_wav(s3_audio, s3_audio_path, sample_rate)
+
+    # Transcribe L2 (English)
+    s3_transcript = transcribe(s3_audio_path, model_name=whisper_model, language="en")
+    if not s3_transcript:
+        console.print("[red]No speech detected. Try again.[/]")
+        return
+
+    # Full IELTS evaluation with key phrases tracking
+    production_eval = evaluate_test(
+        topic["prompt"], s3_transcript, display_lang,
+        api_key=api_key, duration=s3_duration, key_phrases=key_phrases,
+    )
+    display_evaluation(production_eval)
+
+    # === Summary ===
+    content_score = structure_eval.get("content_score", "?")
+    band_score = production_eval.get("overall_band", "?")
+    console.print(Panel(
+        f"Content Structure: [bold]{content_score}[/]  →  IELTS Band: [bold]{band_score}[/]",
+        title="[bold]Practice Session Summary[/]",
+        border_style="green",
+    ))
+
+    # Save
+    save_practice_session(
+        topic, structure_eval, s1_transcript, s1_duration,
+        production_eval, s3_transcript, s3_duration,
+        s1_audio_path, s3_audio_path,
+    )
+    console.print("[bold green]Practice session complete![/] Keep going.\n")
+
+
+# --- Entry Point ---
+
+
+def main():
+    """Entry point for kerokero CLI."""
+    mode = "test"
+    if len(sys.argv) > 1:
+        mode = sys.argv[1]
+        if mode not in ("test", "practice"):
+            console.print(f"[red]Unknown mode: {mode}[/]")
+            console.print("[dim]Usage: kerokero [test|practice][/]")
+            sys.exit(1)
+
+    mode_label = "Test" if mode == "test" else "Practice (3-Stage)"
+    console.print(f"\n[bold green]kerokero[/] [dim]v0.2.0[/] — IELTS Speaking {mode_label}\n")
+
+    config = load_config()
+
+    if mode == "test":
+        main_test(config)
+    else:
+        main_practice(config)
 
 
 if __name__ == "__main__":
