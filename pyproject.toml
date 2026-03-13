@@ -24,7 +24,6 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "anthropic>=0.39",
     "sounddevice>=0.5",
     "numpy>=1.26",
     "scipy>=1.11",
@@ -34,6 +33,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+api = [
+    "anthropic>=0.39",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",

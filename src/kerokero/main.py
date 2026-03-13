@@ -3,18 +3,17 @@
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from random import choice
 
-import anthropic
 import numpy as np
 import sounddevice as sd
 import whisper
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from scipy.io import wavfile
@@ -42,11 +41,8 @@ def load_config() -> dict:
             return tomllib.load(f)
 
     console.print("\n[bold green]Welcome to kerokero![/] Let's set up your config.\n")
-
-    api_key = console.input("[bold]Anthropic API key:[/] ").strip()
-    if not api_key:
-        console.print("[red]API key is required.[/]")
-        sys.exit(1)
+    console.print("[dim]Evaluation uses 'claude' CLI by default (Claude Code MAX plan).[/]")
+    console.print("[dim]To use API instead, add anthropic_api_key to config later.[/]\n")
 
     whisper_model = console.input("[bold]Whisper model[/] (tiny/base/small) [dim]\\[tiny][/]: ").strip() or "tiny"
     duration = console.input("[bold]Max recording seconds[/] [dim]\\[120][/]: ").strip() or "120"
@@ -56,7 +52,6 @@ def load_config() -> dict:
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
     config_text = f"""[ai]
-anthropic_api_key = "{api_key}"
 whisper_model = "{whisper_model}"
 
 [recording]
@@ -182,7 +177,8 @@ Respond in this exact JSON format:
   },
   "strengths": ["...", "..."],
   "weaknesses": ["...", "..."],
-  "corrected_version": "A more natural version of what the speaker was trying to say",
+  "corrected_version_en": "A more natural version in English of what the speaker was trying to say",
+  "corrected_version": "Same model answer translated to the feedback language",
   "specific_improvements": [
     {
       "original": "what they said",
@@ -190,35 +186,37 @@ Respond in this exact JSON format:
       "reason": "why this is better"
     }
   ],
-  "examiner_comment": "Brief overall comment in English"
+  "examiner_comment": "Brief overall comment"
 }"""
 
 
-def evaluate(topic_prompt: str, transcript: str, api_key: str, display_lang: str = "ja") -> dict:
-    """Send transcript to Claude for IELTS evaluation."""
+def evaluate(
+    topic_prompt: str, transcript: str, display_lang: str = "ja",
+    api_key: str = "", duration: float = 0,
+) -> dict:
+    """Evaluate via Claude CLI (default) or Anthropic API (if api_key set)."""
     lang_instruction = ""
     if display_lang != "en":
-        lang_instruction = f"\n\nIMPORTANT: Write the examiner_comment, strengths, weaknesses, specific_improvements reasons, and corrected_version in {display_lang}. Keep the JSON keys in English."
+        lang_instruction = f"\n\nIMPORTANT: Write the examiner_comment, strengths, weaknesses, specific_improvements reasons, and corrected_version in {display_lang}. Write corrected_version_en in English. Keep the JSON keys in English."
+
+    duration_info = ""
+    if duration > 0:
+        duration_info = f"\nRecording duration: {duration:.0f} seconds (note: transcript may be shorter due to pauses/silence)"
 
     user_message = f"""Topic: {topic_prompt}
 
 Candidate's response (transcribed from audio):
-{transcript}
+{transcript}{duration_info}
 
-Evaluate this IELTS Speaking Part 2 response.{lang_instruction}"""
+Evaluate this IELTS Speaking Part 2 response.{lang_instruction}
 
-    client = anthropic.Anthropic(api_key=api_key)
+Respond ONLY with the JSON object, no markdown fences."""
 
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-        progress.add_task("Claude is evaluating...", total=None)
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            system=EVALUATOR_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
+    if api_key:
+        raw = _evaluate_api(user_message, api_key)
+    else:
+        raw = _evaluate_cli(user_message)
 
-    raw = response.content[0].text
     # Extract JSON from response (handle markdown code blocks)
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0]
@@ -226,6 +224,50 @@ Evaluate this IELTS Speaking Part 2 response.{lang_instruction}"""
         raw = raw.split("```")[1].split("```")[0]
 
     return json.loads(raw.strip())
+
+
+def _evaluate_cli(user_message: str) -> str:
+    """Evaluate using Claude CLI (claude -p). Works with MAX plan, no API key needed."""
+    prompt = f"{EVALUATOR_SYSTEM_PROMPT}\n\n---\n\n{user_message}"
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        progress.add_task("Claude is evaluating (CLI)...", total=None)
+        result = subprocess.run(
+            ["claude", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+    if result.returncode != 0:
+        console.print(f"[red]Claude CLI error:[/] {result.stderr.strip()}")
+        console.print("[dim]Hint: Install Claude Code (npm install -g @anthropic-ai/claude-code) "
+                      "or set anthropic_api_key in ~/.kerokero/config.toml[/]")
+        sys.exit(1)
+
+    return result.stdout.strip()
+
+
+def _evaluate_api(user_message: str, api_key: str) -> str:
+    """Evaluate using Anthropic API directly. Requires anthropic_api_key in config."""
+    try:
+        import anthropic
+    except ImportError:
+        console.print("[red]anthropic package not installed.[/] Run: pip install anthropic")
+        sys.exit(1)
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        progress.add_task("Claude is evaluating (API)...", total=None)
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2000,
+            system=EVALUATOR_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+
+    return response.content[0].text
 
 
 def display_evaluation(evaluation: dict):
@@ -255,9 +297,11 @@ def display_evaluation(evaluation: dict):
             improvements.append(f"  [dim]{imp['reason']}[/]\n")
         console.print(Panel("\n".join(improvements), title="[bold]Specific Improvements[/]", border_style="magenta"))
 
-    # Corrected version
+    # Corrected version (English + translated)
+    if evaluation.get("corrected_version_en"):
+        console.print(Panel(evaluation["corrected_version_en"], title="[bold]Model Answer (EN)[/]", border_style="green"))
     if evaluation.get("corrected_version"):
-        console.print(Panel(evaluation["corrected_version"], title="[bold]Model Answer[/]", border_style="green"))
+        console.print(Panel(evaluation["corrected_version"], title="[bold]Model Answer (翻訳)[/]", border_style="green"))
 
     # Examiner comment
     if evaluation.get("examiner_comment"):
@@ -297,8 +341,8 @@ def main():
 
     # 1. Config
     config = load_config()
-    api_key = config["ai"]["anthropic_api_key"]
-    whisper_model = config["ai"].get("whisper_model", "tiny")
+    whisper_model = config.get("ai", {}).get("whisper_model", "tiny")
+    api_key = config.get("ai", {}).get("anthropic_api_key", "")
     duration = config.get("recording", {}).get("duration_seconds", 120)
     sample_rate = config.get("recording", {}).get("sample_rate", 16000)
     display_lang = config.get("display", {}).get("language", "ja")
@@ -306,7 +350,7 @@ def main():
     # 2. Topic
     topic = pick_topic()
     display_topic(topic)
-    prep_countdown(15)
+    prep_countdown(60)
 
     # 3. Record
     audio, actual_duration = record_audio(duration=duration, sample_rate=sample_rate)
@@ -323,7 +367,7 @@ def main():
         return
 
     # 5. Evaluate
-    evaluation = evaluate(topic["prompt"], transcript, api_key, display_lang)
+    evaluation = evaluate(topic["prompt"], transcript, display_lang, api_key=api_key, duration=actual_duration)
     display_evaluation(evaluation)
 
     # 6. Save

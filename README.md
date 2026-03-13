@@ -10,7 +10,6 @@ pip install -e .
 kerokero
 ```
 
-On first run, you'll be asked for your Anthropic API key.
 Then: topic appears → you speak → AI evaluates → feedback displayed.
 
 ## What It Does
@@ -43,8 +42,8 @@ First run creates `~/.kerokero/config.toml`:
 
 ```toml
 [ai]
-anthropic_api_key = "sk-ant-..."
 whisper_model = "tiny"
+# anthropic_api_key = "sk-ant-..."  # optional: use API instead of CLI
 
 [recording]
 duration_seconds = 120
@@ -60,8 +59,16 @@ Sessions are saved to `~/.kerokero/sessions/` as JSON + WAV.
 
 - Python 3.11+
 - A microphone
-- Anthropic API key
+- [Claude Code](https://claude.com/claude-code) CLI (default evaluator, works with MAX plan)
 - ffmpeg (for Whisper)
+
+**Alternative**: If you don't have Claude Code, install with API support:
+
+```bash
+pip install -e ".[api]"
+```
+
+Then add `anthropic_api_key` to your config.
 
 ## Current Status
 
