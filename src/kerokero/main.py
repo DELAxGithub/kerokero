@@ -544,55 +544,57 @@ def main_practice(config: dict):
     topic = pick_topic()
     display_topic(topic)
 
-    # === STAGE 1: Structure (L1 Content Planning) ===
-    console.print("\n[bold magenta]━━━ Stage 1: Structure ━━━[/]")
-    console.print("[dim]Speak in your native language. Plan your answer structure.[/]")
-    console.print(Panel(
-        "[bold]Main Idea[/] — What are you going to talk about?\n"
-        "[bold]Reason[/]    — Why is it significant?\n"
-        "[bold]Example[/]   — Specific details or story\n"
-        "[bold]Closing[/]   — Summary or reflection",
-        title="[bold]Framework[/]",
-        border_style="magenta",
-    ))
+    # === STAGE 1: Structure (L1 Content Planning) — with retry loop ===
+    while True:
+        console.print("\n[bold magenta]━━━ Stage 1: Structure ━━━[/]")
+        console.print("[dim]Speak in your native language. Plan your answer structure.[/]")
+        console.print(Panel(
+            "[bold]Main Idea[/] — What are you going to talk about?\n"
+            "[bold]Reason[/]    — Why is it significant?\n"
+            "[bold]Example[/]   — Specific details or story\n"
+            "[bold]Closing[/]   — Summary or reflection",
+            title="[bold]Framework[/]",
+            border_style="magenta",
+        ))
 
-    console.print(f"\n[yellow]Record your plan (60s, any language, Ctrl+C to stop)[/]")
-    s1_audio, s1_duration = record_audio(duration=60, sample_rate=sample_rate)
-    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    s1_audio_path = SESSIONS_DIR / f"{ts}_s1.wav"
-    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    save_wav(s1_audio, s1_audio_path, sample_rate)
+        console.print(f"\n[yellow]Record your plan (60s, any language, Ctrl+C to stop)[/]")
+        s1_audio, s1_duration = record_audio(duration=60, sample_rate=sample_rate)
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        s1_audio_path = SESSIONS_DIR / f"{ts}_s1.wav"
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        save_wav(s1_audio, s1_audio_path, sample_rate)
 
-    # Transcribe L1 (auto-detect language)
-    s1_transcript = transcribe(s1_audio_path, model_name=whisper_model, language=None)
-    if not s1_transcript:
-        console.print("[red]No speech detected. Try again.[/]")
-        return
-
-    # Evaluate structure
-    structure_eval = evaluate_structure(
-        topic["prompt"], s1_transcript, display_lang, api_key=api_key, duration=s1_duration,
-    )
-    display_structure_result(structure_eval)
-
-    # === STAGE 2: Lexical Priming ===
-    console.print("\n[bold magenta]━━━ Stage 2: Lexical Priming ━━━[/]")
-
-    key_phrases = structure_eval.get("key_phrases_en", [])
-    if key_phrases:
-        display_key_phrases(key_phrases)
-    else:
-        console.print("[dim]No key phrases generated. Proceeding to production.[/]")
-
-    # Gate check
-    if not structure_eval.get("gate_pass", True):
-        choice_input = console.input(
-            "[yellow]Content score below 6. Retry structure (r) or continue anyway (c)?[/] "
-        ).strip().lower()
-        if choice_input == "r":
-            console.print("[dim]Restarting...[/]")
-            main_practice(config)
+        # Transcribe L1 (use display language, typically Japanese)
+        l1_lang = display_lang if display_lang != "en" else None
+        s1_transcript = transcribe(s1_audio_path, model_name=whisper_model, language=l1_lang)
+        if not s1_transcript:
+            console.print("[red]No speech detected. Try again.[/]")
             return
+
+        # Evaluate structure
+        structure_eval = evaluate_structure(
+            topic["prompt"], s1_transcript, display_lang, api_key=api_key, duration=s1_duration,
+        )
+        display_structure_result(structure_eval)
+
+        # === STAGE 2: Lexical Priming ===
+        console.print("\n[bold magenta]━━━ Stage 2: Lexical Priming ━━━[/]")
+
+        key_phrases = structure_eval.get("key_phrases_en", [])
+        if key_phrases:
+            display_key_phrases(key_phrases)
+        else:
+            console.print("[dim]No key phrases generated. Proceeding to production.[/]")
+
+        # Gate check — retry same topic if structure is weak
+        if not structure_eval.get("gate_pass", True):
+            choice_input = console.input(
+                "[yellow]Content score below 6. Retry structure (r) or continue anyway (c)?[/] "
+            ).strip().lower()
+            if choice_input == "r":
+                console.print("[dim]Retrying Stage 1 with the same topic...[/]")
+                continue
+        break
 
     console.print("\n[dim]Take 10 seconds to absorb the key phrases...[/]")
     for i in range(10, 0, -1):
