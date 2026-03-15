@@ -1,6 +1,7 @@
 """kerokero — IELTS speaking practice with content-first methodology."""
 
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -70,10 +71,15 @@ language = "{language}"
 # --- Topic ---
 
 
-def pick_topic() -> dict:
-    """Pick a random IELTS topic card."""
+def pick_topic(prefix: str = "") -> dict:
+    """Pick a random topic card, optionally filtered by id prefix."""
     with open(TOPICS_PATH) as f:
         topics = json.load(f)
+    if prefix:
+        topics = [t for t in topics if t["id"].startswith(prefix)]
+        if not topics:
+            console.print(f"[red]No topics found with prefix: {prefix}[/]")
+            sys.exit(1)
     return choice(topics)
 
 
@@ -159,9 +165,10 @@ def transcribe(audio_path: Path, model_name: str = "tiny", language: str | None 
 
 
 def call_claude(system_prompt: str, user_message: str, api_key: str = "") -> str:
-    """Call Claude via CLI or API. Returns raw text response."""
-    if api_key:
-        return _call_api(system_prompt, user_message, api_key)
+    """Call Claude via API (config key or ANTHROPIC_API_KEY env var) or CLI fallback."""
+    resolved_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    if resolved_key:
+        return _call_api(system_prompt, user_message, resolved_key)
     return _call_cli(system_prompt, user_message)
 
 
@@ -248,8 +255,13 @@ Respond in this exact JSON format:
       "reason": "why this is better"
     }
   ],
-  "examiner_comment": "Brief overall comment"
-}"""
+  "examiner_comment": "Brief overall comment",
+  "shadow_drills": ["phrase1 (5-10 words)", "phrase2", "phrase3"]
+}
+
+Identify 3 phrases the speaker struggled with or avoided.
+Provide natural English alternatives as shadow_drills.
+Each phrase must be 5-10 words. Conversational, not textbook."""
 
 
 def evaluate_test(
@@ -329,6 +341,33 @@ def display_evaluation(evaluation: dict):
 
     if evaluation.get("examiner_comment"):
         console.print(f"\n[bold]Examiner:[/] {evaluation['examiner_comment']}\n")
+
+
+def export_shadow_drills(evaluation: dict, topic: dict) -> Path | None:
+    """Export shadow drills from evaluation as ShadowMaster-compatible JSON."""
+    drills = evaluation.get("shadow_drills", [])
+    if not drills:
+        return None
+
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    date_str = datetime.now().strftime("%Y-%m-%d")
+
+    shadow = {
+        "folder": {
+            "name": f"{topic['topic']} — ドリル {date_str}",
+            "sentences": [
+                {"id": f"drill-{i+1:03d}", "text": phrase, "translation": "", "chunks": []}
+                for i, phrase in enumerate(drills)
+            ],
+        }
+    }
+
+    path = SESSIONS_DIR / f"{ts}_drills.json"
+    path.write_text(json.dumps(shadow, ensure_ascii=False, indent=2))
+    console.print(f"\n[dim]Shadow drills saved: {path}[/]")
+    console.print("[bold cyan]→ ShadowMasterにインポートして反復練習[/]")
+    return path
 
 
 # --- Practice Mode: Stage 1 (Structure) ---
@@ -523,6 +562,7 @@ def main_test(config: dict):
         topic["prompt"], transcript, display_lang, api_key=api_key, duration=actual_duration,
     )
     display_evaluation(evaluation)
+    export_shadow_drills(evaluation, topic)
 
     # 5. Save
     save_test_session(topic, transcript, evaluation, actual_duration, audio_path)
@@ -532,7 +572,7 @@ def main_test(config: dict):
 # --- Main: Practice Mode (3-Stage) ---
 
 
-def main_practice(config: dict):
+def main_practice(config: dict, tag: str = ""):
     """Practice mode: Structure (L1) → Priming → Production (L2)."""
     whisper_model = config.get("ai", {}).get("whisper_model", "tiny")
     api_key = config.get("ai", {}).get("anthropic_api_key", "")
@@ -541,7 +581,7 @@ def main_practice(config: dict):
     display_lang = config.get("display", {}).get("language", "ja")
 
     # --- Topic ---
-    topic = pick_topic()
+    topic = pick_topic(prefix=tag)
     display_topic(topic)
 
     # === STAGE 1: Structure (L1 Content Planning) — with retry loop ===
@@ -625,6 +665,7 @@ def main_practice(config: dict):
         api_key=api_key, duration=s3_duration, key_phrases=key_phrases,
     )
     display_evaluation(production_eval)
+    export_shadow_drills(production_eval, topic)
 
     # === Summary ===
     content_score = structure_eval.get("content_score", "?")
@@ -650,22 +691,26 @@ def main_practice(config: dict):
 def main():
     """Entry point for kerokero CLI."""
     mode = "test"
+    tag = ""
     if len(sys.argv) > 1:
         mode = sys.argv[1]
         if mode not in ("test", "practice"):
             console.print(f"[red]Unknown mode: {mode}[/]")
-            console.print("[dim]Usage: kerokero [test|practice][/]")
+            console.print("[dim]Usage: kerokero [test|practice] [tag][/]")
             sys.exit(1)
+    if len(sys.argv) > 2:
+        tag = sys.argv[2]
 
     mode_label = "Test" if mode == "test" else "Practice (3-Stage)"
-    console.print(f"\n[bold green]kerokero[/] [dim]v0.2.0[/] — IELTS Speaking {mode_label}\n")
+    tag_label = f" [{tag}]" if tag else ""
+    console.print(f"\n[bold green]kerokero[/] [dim]v0.2.0[/] — IELTS Speaking {mode_label}{tag_label}\n")
 
     config = load_config()
 
     if mode == "test":
         main_test(config)
     else:
-        main_practice(config)
+        main_practice(config, tag=tag)
 
 
 if __name__ == "__main__":

@@ -198,5 +198,45 @@
       "producing a podcast series from scratch",
       "automating a workflow that saved hours of manual work"
     ]
+  },
+  {
+    "id": "tlr-001",
+    "topic": "Where are you from?",
+    "prompt": "Answer 'Where are you from?' naturally, then ask the same question back.",
+    "suggested_angles": [
+      "Tokyo → explain what brought you to Spain",
+      "Keep it one sentence, then flip the question",
+      "Avoid over-explaining Japan"
+    ]
+  },
+  {
+    "id": "tlr-002",
+    "topic": "How long have you been in Malaga?",
+    "prompt": "Answer 'How long have you been in Malaga?' then ask the same back.",
+    "suggested_angles": [
+      "A few months → mention it's temporary for now",
+      "Show curiosity about whether they're a local or expat",
+      "One answer, one question, stop talking"
+    ]
+  },
+  {
+    "id": "tlr-003",
+    "topic": "What do you do?",
+    "prompt": "Answer 'What do you do?' in plain English, then ask back.",
+    "suggested_angles": [
+      "Documentary filmmaker → NHK → keep it simple",
+      "Avoid 'video producer' — too vague. 'I make documentaries' is enough",
+      "Do NOT explain kerokero unless asked"
+    ]
+  },
+  {
+    "id": "tlr-004",
+    "topic": "How did you end up in Malaga?",
+    "prompt": "Answer 'How did you end up in Malaga?' then ask the same back.",
+    "suggested_angles": [
+      "Digital nomad visa → wanted a base in Europe",
+      "Keep it curious and light, not a life story",
+      "End with a question: 'What about you?'"
+    ]
   }
 ]
