@@ -1,0 +1,34 @@
+name = "DELAX Sales English"
+description = "Documentary production sales conversation evaluation"
+focus = "sales"
+display_lang = "ja"
+
+[[rubric]]
+key = "clarity_of_value_prop"
+label_en = "Clarity of value proposition"
+label_ja = "営業価値の伝達"
+
+[[rubric]]
+key = "production_credibility"
+label_en = "Production credibility"
+label_ja = "制作実績の説得力"
+
+[[rubric]]
+key = "response_to_pushback"
+label_en = "Response to pushback"
+label_ja = "反論対応"
+
+[[rubric]]
+key = "cta_strength"
+label_en = "CTA strength"
+label_ja = "クロージングの強さ"
+
+target_phrases = [
+  "I produced documentaries for NHK including...",
+  "We can shoot in Europe with full crew...",
+  "Our turnaround on a 20-minute documentary is...",
+  "Let me show you a few clips from past projects...",
+  "What kind of timeline are you working with?",
+]
+
+weak_areas_focus = ["articles", "tense_switching", "output_volume"]

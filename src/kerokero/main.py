@@ -29,6 +29,8 @@ KEROKERO_DIR = Path.home() / ".kerokero"
 SESSIONS_DIR = KEROKERO_DIR / "sessions"
 CONFIG_PATH = KEROKERO_DIR / "config.toml"
 TOPICS_PATH = Path(__file__).parent.parent.parent / "topics" / "ielts.json"
+USER_PROFILES_DIR = KEROKERO_DIR / "profiles"
+REPO_PROFILES_DIR = Path(__file__).parent.parent.parent / "profiles"
 
 
 # --- Config ---
@@ -161,6 +163,28 @@ def transcribe(audio_path: Path, model_name: str = "tiny", language: str | None 
     return transcript
 
 
+def transcribe_file(
+    audio_path: Path, model_name: str = "tiny", language: str | None = "en"
+) -> tuple[str, float]:
+    """Transcribe an existing audio file (any format ffmpeg supports).
+
+    Returns (text, duration_seconds). Used by analyze (Coach mode), where the
+    audio comes from outside instead of being recorded by kerokero.
+    """
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        lang_label = language or "auto"
+        progress.add_task(f"Transcribing {audio_path.name} ({lang_label})...", total=None)
+        model = whisper.load_model(model_name)
+        kwargs = {"language": language} if language else {}
+        result = model.transcribe(str(audio_path), **kwargs)
+
+    transcript = result["text"].strip()
+    segments = result.get("segments") or []
+    duration = float(segments[-1]["end"]) if segments else 0.0
+    console.print(Panel(transcript, title="[bold]Transcript[/]", border_style="blue"))
+    return transcript, duration
+
+
 # --- Claude call (shared) ---
 
 
@@ -222,6 +246,159 @@ def parse_json_response(raw: str) -> dict:
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0]
     return json.loads(raw.strip())
+
+
+# --- Coach Mode: Profile loading & evaluation ---
+
+
+def load_profile(name: str) -> dict:
+    """Load a coach profile (TOML).
+
+    Search order: ~/.kerokero/profiles/<name>.toml → <repo>/profiles/<name>.toml.
+    """
+    for base in (USER_PROFILES_DIR, REPO_PROFILES_DIR):
+        path = base / f"{name}.toml"
+        if path.exists():
+            with open(path, "rb") as f:
+                return tomllib.load(f)
+    console.print(f"[red]Profile not found:[/] {name}")
+    console.print(f"[dim]Searched: {USER_PROFILES_DIR}, {REPO_PROFILES_DIR}[/]")
+    sys.exit(1)
+
+
+def build_profile_system_prompt(profile: dict) -> str:
+    """Build a Claude system prompt from a coach profile."""
+    rubric = profile.get("rubric", [])
+    rubric_lines = "\n".join(
+        f"- {r['key']}: {r.get('label_en', r['key'])}" for r in rubric
+    )
+    target_phrases = profile.get("target_phrases", [])
+    target_block = ""
+    if target_phrases:
+        joined = "\n".join(f"  - {p}" for p in target_phrases)
+        target_block = f"\n\nTarget phrases the speaker should use or approximate:\n{joined}"
+
+    return f"""You are an English speaking coach evaluating a recorded conversation.
+
+Profile: {profile.get('name', 'Custom')}
+Focus: {profile.get('focus', 'general')}
+{profile.get('description', '')}
+
+Rubric (each scored 1-9):
+{rubric_lines}{target_block}
+
+Respond in this exact JSON format (no markdown fences):
+{{
+  "overall_score": 7.0,
+  "rubric_scores": {{ "<rubric_key>": 7, "...": 6 }},
+  "strengths": ["..."],
+  "weaknesses": ["..."],
+  "specific_improvements": [
+    {{"original": "what they said", "improved": "better way", "reason": "why"}}
+  ],
+  "model_answer_en": "A natural English version of what they were trying to convey",
+  "examiner_comment": "Brief overall coaching comment",
+  "target_phrases_used": ["..."],
+  "target_phrases_missed": ["..."],
+  "shadow_drills": ["5-10 word phrase 1", "phrase 2", "phrase 3"]
+}}
+
+rubric_scores must contain one integer (1-9) for every rubric key listed above.
+Provide exactly 3 shadow_drills phrases (5-10 words each) the speaker should rehearse."""
+
+
+def evaluate_with_profile(
+    profile: dict,
+    transcript: str,
+    topic_text: str = "",
+    duration: float = 0,
+    api_key: str = "",
+) -> dict:
+    """Evaluate a transcript against a coach profile rubric."""
+    display_lang = profile.get("display_lang", "ja")
+    lang_instruction = ""
+    if display_lang != "en":
+        lang_instruction = (
+            f"\n\nIMPORTANT: Write strengths, weaknesses, specific_improvements reasons, "
+            f"and examiner_comment in {display_lang}. Write model_answer_en in English. "
+            f"Keep JSON keys in English."
+        )
+
+    duration_info = f"\nRecording duration: {duration:.0f} seconds" if duration > 0 else ""
+    topic_info = f"\nContext / topic: {topic_text}" if topic_text else ""
+
+    user_message = (
+        f"{topic_info}\n"
+        f"Speaker's transcript:\n{transcript}{duration_info}\n\n"
+        f"Evaluate against the rubric.{lang_instruction}\n\n"
+        f"Respond ONLY with the JSON object, no markdown fences."
+    )
+    system = build_profile_system_prompt(profile)
+    raw = call_claude(system, user_message, api_key)
+    return parse_json_response(raw)
+
+
+def display_profile_evaluation(evaluation: dict, profile: dict):
+    """Display a profile-based evaluation (shape differs from IELTS evaluator)."""
+    rubric_map = {r["key"]: r for r in profile.get("rubric", [])}
+    display_lang = profile.get("display_lang", "ja")
+
+    overall = evaluation.get("overall_score", "?")
+    score_lines = [f"[bold yellow]Overall: {overall}[/]\n"]
+    for key, score in (evaluation.get("rubric_scores") or {}).items():
+        meta = rubric_map.get(key, {})
+        label = meta.get(f"label_{display_lang}") or meta.get("label_en") or key
+        score_lines.append(f"  {label:30s}{score}")
+    console.print(Panel(
+        "\n".join(score_lines),
+        title=f"[bold]{profile.get('name', 'Profile')}[/]",
+        border_style="yellow",
+    ))
+
+    strengths = "\n".join(f"  [green]✓[/] {s}" for s in evaluation.get("strengths", []))
+    weaknesses = "\n".join(f"  [red]✗[/] {w}" for w in evaluation.get("weaknesses", []))
+    if strengths or weaknesses:
+        console.print(Panel(
+            f"[bold green]Strengths[/]\n{strengths or '  [dim]none[/]'}\n\n"
+            f"[bold red]Weaknesses[/]\n{weaknesses or '  [dim]none[/]'}",
+            border_style="white",
+        ))
+
+    if evaluation.get("specific_improvements"):
+        improvements = []
+        for imp in evaluation["specific_improvements"]:
+            improvements.append(
+                f'  [red]"{imp.get("original", "")}"[/] → '
+                f'[green]"{imp.get("improved", "")}"[/]'
+            )
+            if imp.get("reason"):
+                improvements.append(f"  [dim]{imp['reason']}[/]\n")
+        console.print(Panel(
+            "\n".join(improvements),
+            title="[bold]Specific Improvements[/]",
+            border_style="magenta",
+        ))
+
+    if evaluation.get("model_answer_en"):
+        console.print(Panel(
+            evaluation["model_answer_en"],
+            title="[bold]Model Answer (EN)[/]",
+            border_style="green",
+        ))
+
+    used = evaluation.get("target_phrases_used") or []
+    missed = evaluation.get("target_phrases_missed") or []
+    if used or missed:
+        used_block = "\n".join(f"  [green]✓[/] {p}" for p in used) or "  [dim]none[/]"
+        missed_block = "\n".join(f"  [red]✗[/] {p}" for p in missed) or "  [dim]none[/]"
+        console.print(Panel(
+            f"[bold green]Used[/]\n{used_block}\n\n[bold red]Missed[/]\n{missed_block}",
+            title="[bold]Target Phrases[/]",
+            border_style="cyan",
+        ))
+
+    if evaluation.get("examiner_comment"):
+        console.print(f"\n[bold]Coach:[/] {evaluation['examiner_comment']}\n")
 
 
 # --- Test Mode Evaluation ---
@@ -344,27 +521,29 @@ def display_evaluation(evaluation: dict):
 
 
 def export_shadow_drills(evaluation: dict, topic: dict) -> Path | None:
-    """Export shadow drills from evaluation as ShadowMaster-compatible JSON."""
+    """Export shadow drills as a ShadowMaster-importable JSON.
+
+    Format matches ShadowMaster's SimpleJSONImporter / BulkImportView (v1.2):
+    a flat array of {text, translation, accent}. Default accent is en-GB to
+    align with ShadowMaster Tab 3 (Instant Translation, 226 BrE preset).
+
+    The previous nested {folder: {name, sentences:[...]}} shape was a v0.2
+    artifact that the iOS importers actually never accepted.
+    """
     drills = evaluation.get("shadow_drills", [])
     if not drills:
         return None
 
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    date_str = datetime.now().strftime("%Y-%m-%d")
 
-    shadow = {
-        "folder": {
-            "name": f"{topic['topic']} — ドリル {date_str}",
-            "sentences": [
-                {"id": f"drill-{i+1:03d}", "text": phrase, "translation": "", "chunks": []}
-                for i, phrase in enumerate(drills)
-            ],
-        }
-    }
+    payload = [
+        {"text": phrase, "translation": "", "accent": "en-GB"}
+        for phrase in drills
+    ]
 
     path = SESSIONS_DIR / f"{ts}_drills.json"
-    path.write_text(json.dumps(shadow, ensure_ascii=False, indent=2))
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     console.print(f"\n[dim]Shadow drills saved: {path}[/]")
     console.print("[bold cyan]→ ShadowMasterにインポートして反復練習[/]")
     return path
@@ -685,25 +864,148 @@ def main_practice(config: dict, tag: str = ""):
     console.print("[bold green]Practice session complete![/] Keep going.\n")
 
 
+# --- Main: Analyze Mode (Coach v0.3) ---
+
+
+def save_analyze_session(
+    audio_path: Path,
+    profile_name: str,
+    topic_text: str,
+    transcript: str,
+    duration: float,
+    evaluation: dict,
+) -> Path:
+    """Save an analyze-mode session as JSON."""
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    session = {
+        "mode": "analyze",
+        "timestamp": datetime.now().isoformat(),
+        "profile": profile_name,
+        "topic": topic_text,
+        "audio_path": str(audio_path),
+        "transcript": transcript,
+        "duration_seconds": round(duration, 1),
+        "evaluation": evaluation,
+    }
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    path = SESSIONS_DIR / f"{ts}_analyze.json"
+    path.write_text(json.dumps(session, ensure_ascii=False, indent=2))
+    console.print(f"[dim]Session saved: {path}[/]")
+    return path
+
+
+def main_analyze(
+    config: dict,
+    audio_path: Path,
+    profile_name: str | None,
+    topic_text: str,
+):
+    """Coach mode: take an existing audio file, transcribe, evaluate, save."""
+    whisper_model = config.get("ai", {}).get("whisper_model", "tiny")
+    api_key = config.get("ai", {}).get("anthropic_api_key", "")
+
+    if not audio_path.exists():
+        console.print(f"[red]Audio file not found:[/] {audio_path}")
+        sys.exit(1)
+
+    transcript, duration = transcribe_file(
+        audio_path, model_name=whisper_model, language="en"
+    )
+    if not transcript:
+        console.print("[red]No speech detected.[/]")
+        return
+
+    if profile_name:
+        profile = load_profile(profile_name)
+        evaluation = evaluate_with_profile(
+            profile, transcript,
+            topic_text=topic_text, duration=duration, api_key=api_key,
+        )
+        display_profile_evaluation(evaluation, profile)
+        export_shadow_drills(evaluation, {"topic": profile.get("name", profile_name)})
+    else:
+        # Fallback: IELTS evaluator
+        display_lang = config.get("display", {}).get("language", "ja")
+        topic_prompt = topic_text or "Free-form speaking sample (no topic provided)"
+        evaluation = evaluate_test(
+            topic_prompt, transcript, display_lang,
+            api_key=api_key, duration=duration,
+        )
+        display_evaluation(evaluation)
+        export_shadow_drills(evaluation, {"topic": "freeform"})
+
+    save_analyze_session(
+        audio_path, profile_name or "ielts", topic_text, transcript, duration, evaluation
+    )
+    console.print("[bold green]Analysis complete![/]\n")
+
+
+def _parse_analyze_args(args: list[str]) -> tuple[Path, str | None, str]:
+    """Manual flag parser for `kerokero analyze`. Keeps stdlib-only."""
+    audio_path: Path | None = None
+    profile_name: str | None = None
+    topic_text = ""
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--audio", "-a") and i + 1 < len(args):
+            audio_path = Path(args[i + 1]).expanduser()
+            i += 2
+        elif a in ("--profile", "-p") and i + 1 < len(args):
+            profile_name = args[i + 1]
+            i += 2
+        elif a in ("--topic", "-t") and i + 1 < len(args):
+            topic_text = args[i + 1]
+            i += 2
+        elif a in ("-h", "--help"):
+            console.print(
+                "[dim]Usage: kerokero analyze --audio FILE "
+                "[--profile NAME] [--topic '...'][/]"
+            )
+            sys.exit(0)
+        else:
+            console.print(f"[red]Unknown argument:[/] {a}")
+            console.print(
+                "[dim]Usage: kerokero analyze --audio FILE "
+                "[--profile NAME] [--topic '...'][/]"
+            )
+            sys.exit(1)
+    if audio_path is None:
+        console.print("[red]--audio FILE is required[/]")
+        sys.exit(1)
+    return audio_path, profile_name, topic_text
+
+
 # --- Entry Point ---
 
 
 def main():
     """Entry point for kerokero CLI."""
+    # Coach Mode (v0.3): kerokero analyze --audio FILE [--profile NAME] [--topic ...]
+    if len(sys.argv) > 1 and sys.argv[1] == "analyze":
+        audio_path, profile_name, topic_text = _parse_analyze_args(sys.argv[2:])
+        label = f" [{profile_name}]" if profile_name else " [ielts-fallback]"
+        console.print(
+            f"\n[bold green]kerokero[/] [dim]v0.3.0[/] — Coach Mode (analyze){label}\n"
+        )
+        config = load_config()
+        main_analyze(config, audio_path, profile_name, topic_text)
+        return
+
     mode = "test"
     tag = ""
     if len(sys.argv) > 1:
         mode = sys.argv[1]
         if mode not in ("test", "practice"):
             console.print(f"[red]Unknown mode: {mode}[/]")
-            console.print("[dim]Usage: kerokero [test|practice] [tag][/]")
+            console.print("[dim]Usage: kerokero [test|practice|analyze] [tag][/]")
             sys.exit(1)
     if len(sys.argv) > 2:
         tag = sys.argv[2]
 
     mode_label = "Test" if mode == "test" else "Practice (3-Stage)"
     tag_label = f" [{tag}]" if tag else ""
-    console.print(f"\n[bold green]kerokero[/] [dim]v0.2.0[/] — IELTS Speaking {mode_label}{tag_label}\n")
+    console.print(f"\n[bold green]kerokero[/] [dim]v0.3.0[/] — IELTS Speaking {mode_label}{tag_label}\n")
 
     config = load_config()
 
