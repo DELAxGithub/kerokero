@@ -32,3 +32,6 @@ Thumbs.db
 
 # Session logs (user data)
 sessions/
+
+# agent-harness work dir
+.auto-fix/

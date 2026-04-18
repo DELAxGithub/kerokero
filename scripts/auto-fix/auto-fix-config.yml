@@ -1,0 +1,36 @@
+project:
+  name: "kerokero"
+
+build:
+  # [dev] extra provides pytest + ruff; tests use pytest-asyncio.
+  command: "pip install -e '.[dev]' && pytest && ruff check ."
+  max_attempts: 5
+  timeout_seconds: 600
+
+claude:
+  model: "claude-sonnet-4-6"
+
+watch:
+  directories:
+    - "src"
+    - "tests"
+  debounce_seconds: 3
+  include_patterns:
+    - "*.py"
+  exclude_patterns:
+    - "__pycache__/*"
+    - ".pytest_cache/*"
+    - "dist/*"
+    - ".venv/*"
+    - "build/*"
+
+error_detection:
+  critical_patterns:
+    - "FAILED "
+    - "Error:.*"
+    - "SyntaxError"
+    - "AssertionError"
+
+github:
+  auto_commit: true
+  commit_message_prefix: "🔧 Auto-fix:"
