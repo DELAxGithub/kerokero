@@ -88,11 +88,55 @@ kerokero に以下の3層を導入する:
 - メモリ `cloudflare-workers-stripe-stack` — ソロ開発の最小コスト stack
 - shadow_master — 達成要素（streak / FSRS）の参照実装、後段で借りる
 
+## Beta 昇格条件（agent-harness/project-phase.md §3 への注記）
+
+2026-05-02 追記: agent-harness に `project-phase.md` を導入した結果、
+本 ADR の射程が beta 判定にも関わるようになったので明示する。
+
+**kerokero は CLI 単体では beta 昇格しない**。
+
+理由:
+
+- `project-phase.md` §3 ゲート1（Time to First Value）で求める
+  「ログイン不要 / 説明書不要 / 3 分で Aha!」は CLI の構造上、達成しづらい
+- ゲート3（Telemetry）も CLI 単体では `--debug` ログ吐き出し程度しか実装できず、
+  「離脱ポイントの把握」が原理的に弱い
+
+したがって **本 ADR で設計するラッパー（cron + 通知 + iPhone inbox + Daily Note）
+が beta 昇格の必要条件** になる:
+
+- ラッパー側がエンドユーザー UX の出口（Daily Note のお題 / 結果サマリ）を担う
+- telemetry はラッパーの Worker 側で `@delax/telemetry-client`（euroquest ADR-0007 参照）を入れる
+- CLI 自体は採点エンジンとして OSS prep を継続、phase は `oss-prep` 扱いで別管理
+
+つまり **kerokero リポの Phase は 2 軸で考える**:
+
+- CLI コア → `oss-prep`（外部公開準備、ライブラリ的）
+- ラッパー一式（本 ADR の3層） → 自分用ツールとしての `active` → 動作確認後 `beta`
+
+CLI と wrapper が同一リポにあっても、CLAUDE.md の Phase 行は 2 行併記でよい。
+v0.3 spec の Week 2 停滞を実質解くのはラッパーの方なので、
+**今後の作業優先度はラッパー側 > CLI コア**。
+
+## Related
+
+- ADR-0001 — Record architecture decisions（このリポの ADR 運用）
+- `docs/specs/v0.3-coach-mode.md` — Week 2 停滞の現状、Week 3+ 候補
+- tachi-tracker（DELAxGithub/tachi-tracker）— Cloudflare Worker + KV + cron の参照実装
+- euroquest `docs/adr/0007-telemetry-stack-cf-worker.md` — Telemetry 共通 stack、本 ADR の Worker と統合候補
+- delax-shared-packages `templates/agent-harness/claude-rules/project-phase.md` — Phase 定義と昇格ゲート
+- メモリ `reference_cloudflare-baseline` — 弊社 Cloudflare ベース構成
+- メモリ `cloudflare-workers-stripe-stack` — ソロ開発の最小コスト stack
+- shadow_master — 達成要素（streak / FSRS）の参照実装、後段で借りる
+
 ## Open Questions
 
 このまま実装に進む前に決めるべき点（Conflict Report 候補）:
 
 1. **配信先は何にするか** — メール / Push / Obsidian Daily Note のどれを first delivery にするか
 2. **inbox の置き場所** — iCloud Drive / Dropbox / `~/Documents/agent-work`（Syncthing）どれにするか
-3. **Cloudflare Worker は新規 worker を立てるか、tachi-tracker に同居させるか**
+3. **Cloudflare Worker は新規 worker を立てるか、tachi-tracker に同居させるか、
+   それとも euroquest ADR-0007 の telemetry Worker に相乗りさせるか**
 4. **analyze 自動実行のリスク** — inbox に意図せぬ音声（家族の声 / 他人の会話）が入った場合の扱い
+5. **CLAUDE.md の Phase 行を CLI / wrapper の 2 行併記にする運用** が project-phase.md 想定範囲内か、
+   それとも別リポ分割すべきか
